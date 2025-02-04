@@ -41,9 +41,6 @@ if HEROKU_APP_NAME:
 else:
     BASE_URL = os.environ.get("BASE_URL")  # fallback if not on Heroku
 
-# The port Heroku assigns:
-PORT = int(os.environ.get("PORT", "5000"))
-
 # ========= SET UP LOGGING ==========
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -270,8 +267,11 @@ def permanent_link(token):
 def index():
     return "Telegram File Dump Bot is running."
 
-# ========= MAIN ==========
-if __name__ == "__main__":
+# ========= PRODUCTION SETUP ==========
+# Instead of using Flask's development server, we rely on a production WSGI server (e.g. Gunicorn).
+# Use the before_first_request hook to set the webhook once.
+@app.before_first_request
+def setup_webhook():
     WEBHOOK_URL = f"{BASE_URL}/webhook"
     try:
         bot.delete_webhook()
@@ -279,5 +279,3 @@ if __name__ == "__main__":
         logger.info("Webhook set to %s", WEBHOOK_URL)
     except Exception as e:
         logger.error("Failed to set webhook: %s", e)
-
-    app.run(host="0.0.0.0", port=PORT)
