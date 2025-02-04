@@ -1,6 +1,6 @@
 {
   "name": "Telegram File Dump Bot",
-  "description": "A Telegram bot that stores files and generates permanent shareable links with forced subscriptions.",
+  "description": "A Telegram bot that welcomes users and stores user data in MongoDB.",
   "repository": "https://github.com/yourusername/your-repo-name",
   "env": {
     "BOT_TOKEN": {
@@ -16,15 +16,19 @@
       "required": true
     },
     "FORCE_SUB_CHANNEL1": {
-      "description": "First private channel ID (e.g., -1001234567890)",
+      "description": "First forced subscription channel ID (e.g., -1001234567890)",
       "required": true
     },
     "FORCE_SUB_CHANNEL2": {
-      "description": "Second private channel ID (e.g., -1009876543210)",
+      "description": "Second forced subscription channel ID (e.g., -1009876543210)",
       "required": true
     },
     "HEROKU_APP_NAME": {
       "description": "Your Heroku app name (used to form the base URL)",
+      "required": true
+    },
+    "MONGODB_URL": {
+      "description": "Your MongoDB connection string",
       "required": true
     }
   },
