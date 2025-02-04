@@ -21,6 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     Filters,
 )
+from telegram.error import RetryAfter  # Import the exception for flood control
 
 # ========= CONFIGURATION FROM ENVIRONMENT VARIABLES ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Telegram bot token
@@ -115,8 +116,7 @@ def join_button(channel_id: str) -> str:
         return "#"
 
 # ========= HANDLERS ==========
-# In-memory storage for media groups (to support multiple file uploads)
-media_group_dict = {}  # key: media_group_id, value: list of messages
+media_group_dict = {}  # In-memory storage for media groups
 
 def process_file_messages(update: Update, context):
     """Process a file (or a group of files) sent by an admin."""
@@ -126,7 +126,6 @@ def process_file_messages(update: Update, context):
         message.reply_text("You are not authorized to upload files.")
         return
 
-    # For single file messages (no media_group_id)
     if not message.media_group_id:
         copied = bot.copy_message(
             chat_id=DUMP_CHANNEL, from_chat_id=message.chat_id, message_id=message.message_id
@@ -135,7 +134,6 @@ def process_file_messages(update: Update, context):
         reply_text = f"Permanent link:\n{BASE_URL}/{token}"
         message.reply_text(reply_text)
     else:
-        # For media groups, collect messages until the group is complete.
         mgid = message.media_group_id
         if mgid not in media_group_dict:
             media_group_dict[mgid] = []
@@ -265,15 +263,26 @@ def index():
 
 # ========= PRODUCTION WEBHOOK SETUP ==========
 def setup_webhook():
-    """Wait a few seconds for the server to start, then set the webhook."""
+    """Wait a few seconds for the server to start, then set the webhook with retries on flood control."""
     time.sleep(3)
     WEBHOOK_URL = f"{BASE_URL}/webhook"
-    try:
-        bot.delete_webhook()
-        bot.set_webhook(url=WEBHOOK_URL)
-        logger.info("Webhook set to %s", WEBHOOK_URL)
-    except Exception as e:
-        logger.error("Failed to set webhook: %s", e)
+    max_retries = 5
+    retries = 0
+    while retries < max_retries:
+        try:
+            bot.delete_webhook()
+            bot.set_webhook(url=WEBHOOK_URL)
+            logger.info("Webhook set to %s", WEBHOOK_URL)
+            break
+        except RetryAfter as e:
+            logger.error("Failed to set webhook due to flood control: Retry in %s seconds", e.retry_after)
+            time.sleep(e.retry_after)
+        except Exception as e:
+            logger.error("Failed to set webhook: %s", e)
+            time.sleep(1)
+        retries += 1
+    if retries == max_retries:
+        logger.error("Exceeded maximum retries for setting webhook.")
 
 # Start the webhook setup in a background thread.
 threading.Thread(target=setup_webhook).start()
