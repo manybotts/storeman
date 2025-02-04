@@ -30,6 +30,10 @@
     "MONGODB_URL": {
       "description": "Your MongoDB connection string",
       "required": true
+    },
+    "MONGODB_DB": {
+      "description": "The MongoDB database name (default: telegram_bot)",
+      "required": false
     }
   },
   "buildpacks": [
