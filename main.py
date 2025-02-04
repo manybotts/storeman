@@ -4,65 +4,49 @@ import logging
 import base64
 import json
 import threading
-import time
 
 from flask import Flask, request, redirect, abort
-from telegram import (
-    Bot,
-    Update,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    ChatMember,
-)
-from telegram.ext import (
-    Dispatcher,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    Filters,
-)
-from telegram.error import RetryAfter  # Import the exception for flood control
+from telegram import Bot, Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
 
-# ========= CONFIGURATION FROM ENVIRONMENT VARIABLES ==========
+# ===== CONFIGURATION =====
 BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Telegram bot token
 
 ADMIN_IDS = os.environ.get("ADMIN_IDS", "")  # Comma-separated admin IDs (as integers)
 ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip()]
 
 DUMP_CHANNEL = os.environ.get("DUMP_CHANNEL")  
-# Channel (ID or public username) where files will be stored.
+# The channel (ID or public username) where files will be stored.
 
-# For force subscription, use channel IDs (since they are private)
+# For force subscriptions (private channels), we use channel IDs.
 FORCE_SUB_CHANNEL1 = os.environ.get("FORCE_SUB_CHANNEL1")  # e.g., "-1001234567890"
 FORCE_SUB_CHANNEL2 = os.environ.get("FORCE_SUB_CHANNEL2")  # e.g., "-1009876543210"
 
-# Use Heroku's built-in app domain if HEROKU_APP_NAME is provided.
+# Use Heroku's built-in domain via the HEROKU_APP_NAME variable.
 HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME")
 if HEROKU_APP_NAME:
     BASE_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com"
 else:
-    BASE_URL = os.environ.get("BASE_URL")  # fallback if not on Heroku
+    BASE_URL = os.environ.get("BASE_URL")  # fallback
 
-# ========= SET UP LOGGING ==========
+# ===== LOGGING SETUP =====
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ========= INITIALIZE FLASK AND BOT ==========
+# ===== INITIALIZE FLASK & TELEGRAM BOT =====
 app = Flask(__name__)
 bot = Bot(BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=4, use_context=True)
 
-# ========= UTILITY FUNCTIONS ==========
+# ===== UTILITY FUNCTIONS =====
 def encode_token(data: dict) -> str:
-    """Encode a dictionary as a base64 token."""
     json_str = json.dumps(data)
     token_bytes = base64.urlsafe_b64encode(json_str.encode("utf-8"))
     return token_bytes.decode("utf-8")
 
 def decode_token(token: str) -> dict:
-    """Decode a base64 token back to dictionary."""
     try:
         json_str = base64.urlsafe_b64decode(token.encode("utf-8")).decode("utf-8")
         return json.loads(json_str)
@@ -71,27 +55,16 @@ def decode_token(token: str) -> dict:
         return {}
 
 def generate_token(file_type: str, msg_ids: list) -> str:
-    """
-    file_type: "s" for single, "b" for batch.
-    msg_ids: list of Telegram message IDs (from the dump channel)
-    """
     data = {"t": file_type, "ids": msg_ids}
     return encode_token(data)
 
 def parse_token(token: str):
-    """
-    Returns tuple (file_type, msg_ids) or (None, None) if error.
-    """
     data = decode_token(token)
     if "t" in data and "ids" in data:
         return data["t"], data["ids"]
     return None, None
 
 def is_user_subscribed(user_id: int, channel: str) -> bool:
-    """
-    Checks whether the user is a member of the given channel.
-    'channel' is provided as a channel ID.
-    """
     try:
         member = bot.get_chat_member(chat_id=channel, user_id=user_id)
         if member.status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.CREATOR]:
@@ -104,10 +77,6 @@ def check_force_subscriptions(user_id: int) -> bool:
     return is_user_subscribed(user_id, FORCE_SUB_CHANNEL1) and is_user_subscribed(user_id, FORCE_SUB_CHANNEL2)
 
 def join_button(channel_id: str) -> str:
-    """
-    Generate an invite link for a private channel using its channel ID.
-    Requires the bot to be an admin in the channel.
-    """
     try:
         invite_link = bot.export_chat_invite_link(chat_id=channel_id)
         return invite_link
@@ -115,17 +84,18 @@ def join_button(channel_id: str) -> str:
         logger.error("Could not export invite link for channel %s: %s", channel_id, e)
         return "#"
 
-# ========= HANDLERS ==========
-media_group_dict = {}  # In-memory storage for media groups
+# ===== HANDLERS =====
+# In-memory storage for media groups.
+media_group_dict = {}  # key: media_group_id, value: list of messages
 
 def process_file_messages(update: Update, context):
-    """Process a file (or a group of files) sent by an admin."""
     message = update.message
     user_id = message.from_user.id
     if user_id not in ADMIN_IDS:
         message.reply_text("You are not authorized to upload files.")
         return
 
+    # Single file
     if not message.media_group_id:
         copied = bot.copy_message(
             chat_id=DUMP_CHANNEL, from_chat_id=message.chat_id, message_id=message.message_id
@@ -134,6 +104,7 @@ def process_file_messages(update: Update, context):
         reply_text = f"Permanent link:\n{BASE_URL}/{token}"
         message.reply_text(reply_text)
     else:
+        # Media group: collect messages briefly then process together.
         mgid = message.media_group_id
         if mgid not in media_group_dict:
             media_group_dict[mgid] = []
@@ -141,7 +112,6 @@ def process_file_messages(update: Update, context):
         media_group_dict[mgid].append(message)
 
 def process_media_group(mgid):
-    """Process all messages in a media group."""
     messages = media_group_dict.get(mgid, [])
     if not messages:
         return
@@ -164,10 +134,6 @@ def process_media_group(mgid):
     media_group_dict.pop(mgid, None)
 
 def start_command(update: Update, context):
-    """
-    Handle /start command from users.
-    If a token is provided, the bot checks force subscriptions and sends the file(s).
-    """
     message = update.message
     args = context.args
     if not args:
@@ -185,16 +151,12 @@ def start_command(update: Update, context):
         kb = [
             [
                 InlineKeyboardButton("Join Channel 1", url=join_button(FORCE_SUB_CHANNEL1)),
-                InlineKeyboardButton("Join Channel 2", url=join_button(FORCE_SUB_CHANNEL2)),
+                InlineKeyboardButton("Join Channel 2", url=join_button(FORCE_SUB_CHANNEL2))
             ],
-            [
-                InlineKeyboardButton("Try Again", callback_data=f"retry:{token}")
-            ]
+            [InlineKeyboardButton("Try Again", callback_data=f"retry:{token}")]
         ]
-        message.reply_text(
-            "You must join the required channels before you can get the file(s).",
-            reply_markup=InlineKeyboardMarkup(kb)
-        )
+        message.reply_text("You must join the required channels before you can get the file(s).",
+                           reply_markup=InlineKeyboardMarkup(kb))
         return
 
     for mid in msg_ids:
@@ -207,7 +169,6 @@ def start_command(update: Update, context):
             message.reply_text("An error occurred while sending the file.")
 
 def callback_handler(update: Update, context):
-    """Handle callback queries (e.g., when the user clicks 'Try Again')."""
     query = update.callback_query
     query.answer()
     data = query.data
@@ -231,24 +192,19 @@ def callback_handler(update: Update, context):
                 query.message.reply_text("An error occurred while sending the file.")
         query.edit_message_text("Files sent. Enjoy!")
 
-# ========= ADD HANDLERS TO DISPATCHER ==========
 dispatcher.add_handler(MessageHandler(Filters.document | Filters.video | Filters.audio | Filters.photo, process_file_messages))
 dispatcher.add_handler(CommandHandler("start", start_command, pass_args=True))
 dispatcher.add_handler(CallbackQueryHandler(callback_handler))
 
-# ========= WEBHOOK ROUTES ==========
+# ===== WEBHOOK ROUTES =====
 @app.route("/webhook", methods=["POST"])
 def webhook_handler():
-    """Endpoint to receive Telegram updates."""
     update = Update.de_json(request.get_json(force=True), bot)
     dispatcher.process_update(update)
     return "OK"
 
 @app.route("/<token>", methods=["GET"])
 def permanent_link(token):
-    """
-    Redirects the user to the bot’s deep-link start command using the current bot username.
-    """
     try:
         bot_username = bot.get_me().username
         deep_link = f"https://t.me/{bot_username}?start={token}"
@@ -261,28 +217,6 @@ def permanent_link(token):
 def index():
     return "Telegram File Dump Bot is running."
 
-# ========= PRODUCTION WEBHOOK SETUP ==========
-def setup_webhook():
-    """Wait a few seconds for the server to start, then set the webhook with retries on flood control."""
-    time.sleep(3)
-    WEBHOOK_URL = f"{BASE_URL}/webhook"
-    max_retries = 5
-    retries = 0
-    while retries < max_retries:
-        try:
-            bot.delete_webhook()
-            bot.set_webhook(url=WEBHOOK_URL)
-            logger.info("Webhook set to %s", WEBHOOK_URL)
-            break
-        except RetryAfter as e:
-            logger.error("Failed to set webhook due to flood control: Retry in %s seconds", e.retry_after)
-            time.sleep(e.retry_after)
-        except Exception as e:
-            logger.error("Failed to set webhook: %s", e)
-            time.sleep(1)
-        retries += 1
-    if retries == max_retries:
-        logger.error("Exceeded maximum retries for setting webhook.")
-
-# Start the webhook setup in a background thread.
-threading.Thread(target=setup_webhook).start()
+if __name__ == "__main__":
+    # This block is used when running locally.
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
