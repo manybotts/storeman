@@ -4,6 +4,7 @@ import logging
 import base64
 import json
 import threading
+import time
 
 from flask import Flask, request, redirect, abort
 from telegram import (
@@ -92,7 +93,6 @@ def is_user_subscribed(user_id: int, channel: str) -> bool:
     """
     try:
         member = bot.get_chat_member(chat_id=channel, user_id=user_id)
-        # Accept statuses: 'member', 'administrator', 'creator'
         if member.status in [ChatMember.MEMBER, ChatMember.ADMINISTRATOR, ChatMember.CREATOR]:
             return True
     except Exception as e:
@@ -171,7 +171,7 @@ def start_command(update: Update, context):
     If a token is provided, the bot checks force subscriptions and sends the file(s).
     """
     message = update.message
-    args = context.args  # arguments passed after /start
+    args = context.args
     if not args:
         message.reply_text("Welcome! Please use a valid link to retrieve files.")
         return
@@ -184,7 +184,6 @@ def start_command(update: Update, context):
 
     user_id = message.from_user.id
     if not check_force_subscriptions(user_id):
-        # User is not subscribed; send a message with inline buttons to join the channels.
         kb = [
             [
                 InlineKeyboardButton("Join Channel 1", url=join_button(FORCE_SUB_CHANNEL1)),
@@ -200,7 +199,6 @@ def start_command(update: Update, context):
         )
         return
 
-    # All checks passed; send the file(s) by copying from the dump channel.
     for mid in msg_ids:
         try:
             bot.copy_message(
@@ -244,16 +242,14 @@ dispatcher.add_handler(CallbackQueryHandler(callback_handler))
 @app.route("/webhook", methods=["POST"])
 def webhook_handler():
     """Endpoint to receive Telegram updates."""
-    if request.method == "POST":
-        update = Update.de_json(request.get_json(force=True), bot)
-        dispatcher.process_update(update)
+    update = Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
     return "OK"
 
 @app.route("/<token>", methods=["GET"])
 def permanent_link(token):
     """
-    This route makes the generated permanent links independent of the bot’s username.
-    It simply redirects the user to the bot’s deep-link start command using the current bot username.
+    Redirects the user to the bot’s deep-link start command using the current bot username.
     """
     try:
         bot_username = bot.get_me().username
@@ -267,11 +263,10 @@ def permanent_link(token):
 def index():
     return "Telegram File Dump Bot is running."
 
-# ========= PRODUCTION SETUP ==========
-# Instead of using Flask's development server, we rely on a production WSGI server (e.g. Gunicorn).
-# Use the before_first_request hook to set the webhook once.
-@app.before_first_request
+# ========= PRODUCTION WEBHOOK SETUP ==========
 def setup_webhook():
+    """Wait a few seconds for the server to start, then set the webhook."""
+    time.sleep(3)
     WEBHOOK_URL = f"{BASE_URL}/webhook"
     try:
         bot.delete_webhook()
@@ -279,3 +274,6 @@ def setup_webhook():
         logger.info("Webhook set to %s", WEBHOOK_URL)
     except Exception as e:
         logger.error("Failed to set webhook: %s", e)
+
+# Start the webhook setup in a background thread.
+threading.Thread(target=setup_webhook).start()
