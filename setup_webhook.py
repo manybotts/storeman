@@ -5,9 +5,7 @@ import time
 from telegram import Bot
 from telegram.error import RetryAfter, TelegramError
 
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
-)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -31,26 +29,26 @@ def notify_admins(message_text):
 
 def set_webhook():
     try:
-        current_webhook = bot.get_webhook_info().url
-        if current_webhook == WEBHOOK_URL:
-            logger.info("Webhook already set to desired URL: %s", WEBHOOK_URL)
+        current = bot.get_webhook_info().url
+        if current == WEBHOOK_URL:
+            logger.info("Webhook already set to %s", WEBHOOK_URL)
             notify_admins(f"Deployment succeeded: Webhook already set to {WEBHOOK_URL}")
         else:
-            logger.info("Current webhook: %s. Setting to desired URL: %s", current_webhook, WEBHOOK_URL)
+            logger.info("Setting webhook to %s (current: %s)", WEBHOOK_URL, current)
             bot.delete_webhook()
             bot.set_webhook(url=WEBHOOK_URL)
             logger.info("Webhook successfully set to %s", WEBHOOK_URL)
             notify_admins(f"Deployment succeeded: Webhook set to {WEBHOOK_URL}")
     except RetryAfter as e:
-        logger.error("Flood control exceeded. Retry in %s seconds", e.retry_after)
+        logger.error("Flood control exceeded, retrying in %s seconds", e.retry_after)
         time.sleep(e.retry_after)
         set_webhook()
     except TelegramError as e:
-        logger.error("Telegram error while setting webhook: %s", e)
-        notify_admins(f"Deployment error: Telegram error while setting webhook: {e}")
+        logger.error("Telegram error setting webhook: %s", e)
+        notify_admins(f"Deployment error: {e}")
     except Exception as e:
-        logger.error("Unexpected error while setting webhook: %s", e)
-        notify_admins(f"Deployment error: Unexpected error while setting webhook: {e}")
+        logger.error("Unexpected error setting webhook: %s", e)
+        notify_admins(f"Deployment error: {e}")
 
 if __name__ == "__main__":
     set_webhook()
