@@ -4,7 +4,6 @@ import logging
 import base64
 import json
 from datetime import datetime
-
 import threading
 
 from flask import Flask, request, redirect, abort, jsonify
@@ -25,7 +24,7 @@ DUMP_CHANNEL = os.environ.get("DUMP_CHANNEL")
 FORCE_SUB_CHANNEL1 = os.environ.get("FORCE_SUB_CHANNEL1")  # e.g., "-1001234567890"
 FORCE_SUB_CHANNEL2 = os.environ.get("FORCE_SUB_CHANNEL2")  # e.g., "-1009876543210"
 
-# Determine the base URL from Heroku’s app name or BASE_URL config var.
+# Determine the base URL from HEROKU_APP_NAME or BASE_URL config var.
 HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME")
 if HEROKU_APP_NAME:
     BASE_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com"
@@ -38,8 +37,10 @@ if not BASE_URL:
 MONGODB_URL = os.environ.get("MONGODB_URL")
 if not MONGODB_URL:
     raise Exception("MONGODB_URL must be set in config vars!")
+# Use an environment variable for the database name (default to "telegram_bot")
+MONGODB_DB = os.environ.get("MONGODB_DB", "telegram_bot")
 mongo_client = MongoClient(MONGODB_URL)
-db = mongo_client.get_default_database()  # Or specify a database name, e.g. client['botdb']
+db = mongo_client[MONGODB_DB]
 users_collection = db["users"]
 
 # ===== LOGGING SETUP =====
@@ -48,15 +49,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ===== INITIALIZE FLASK & TELEGRAM BOT & DISPATCHER =====
+# ===== INITIALIZE FLASK, TELEGRAM BOT & DISPATCHER =====
 app = Flask(__name__)
 bot = Bot(BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=4, use_context=True)
 
-# ===== TOKEN UTILS (for file messages, if needed) =====
+# ===== TOKEN UTILITIES (for file messages, if needed) =====
 def encode_token(data: dict) -> str:
     json_str = json.dumps(data)
-    return base64.urlsafe_b64encode(json_str.encode("utf-8")).decode("utf-8")
+    token_bytes = base64.urlsafe_b64encode(json_str.encode("utf-8"))
+    return token_bytes.decode("utf-8")
 
 def decode_token(token: str) -> dict:
     try:
@@ -110,10 +112,7 @@ def join_button(channel_id: str) -> str:
         return "#"
 
 # ===== HANDLERS =====
-# For demonstration, we keep the handlers simple.
-# In-memory storage for media groups (if needed in the future)
-media_group_dict = {}
-
+# For simplicity, we ensure that at least the /start command sends a welcome message.
 def start_command(update: Update, context):
     user = update.message.from_user
     register_user(user)
@@ -124,7 +123,6 @@ def start_command(update: Update, context):
 def help_command(update: Update, context):
     update.message.reply_text("Available commands:\n/start - Welcome message\n/help - This help text")
 
-# (Additional file-handling commands can be added as needed.)
 dispatcher.add_handler(CommandHandler("start", start_command))
 dispatcher.add_handler(CommandHandler("help", help_command))
 
@@ -141,7 +139,7 @@ def webhook_route():
 
 @app.route("/")
 def index():
-    return "Telegram File Dump Bot is running."
+    return "Telegram Bot is running."
 
 @app.route("/debug", methods=["GET"])
 def debug_route():
@@ -153,5 +151,6 @@ def debug_route():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    # For local testing; in production, Gunicorn will serve the app.
+    # Only for local testing; in production, Gunicorn will serve the app.
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
+    
