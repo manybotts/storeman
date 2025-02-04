@@ -1,0 +1,36 @@
+{
+  "name": "Telegram File Dump Bot",
+  "description": "A Telegram bot that stores files and generates permanent shareable links with forced subscriptions.",
+  "repository": "https://github.com/yourusername/your-repo-name",
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Your Telegram bot token from BotFather",
+      "required": true
+    },
+    "ADMIN_IDS": {
+      "description": "Comma-separated list of admin Telegram IDs (e.g., 12345678,87654321)",
+      "required": true
+    },
+    "DUMP_CHANNEL": {
+      "description": "Channel ID or public username where files are stored (e.g., -1001234567890)",
+      "required": true
+    },
+    "FORCE_SUB_CHANNEL1": {
+      "description": "First private channel ID (e.g., -1001234567890)",
+      "required": true
+    },
+    "FORCE_SUB_CHANNEL2": {
+      "description": "Second private channel ID (e.g., -1009876543210)",
+      "required": true
+    },
+    "HEROKU_APP_NAME": {
+      "description": "Your Heroku app name (used to form the base URL)",
+      "required": true
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ]
+}
