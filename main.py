@@ -22,7 +22,7 @@ DUMP_CHANNEL = os.environ.get("DUMP_CHANNEL")
 FORCE_SUB_CHANNEL1 = os.environ.get("FORCE_SUB_CHANNEL1")  # e.g., "-1001234567890"
 FORCE_SUB_CHANNEL2 = os.environ.get("FORCE_SUB_CHANNEL2")  # e.g., "-1009876543210"
 
-# Use Heroku's built‑in domain via HEROKU_APP_NAME; fallback to BASE_URL if not set.
+# Use Heroku's built‑in domain via HEROKU_APP_NAME; fallback to BASE_URL.
 HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME")
 if HEROKU_APP_NAME:
     BASE_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com"
@@ -140,7 +140,6 @@ def start_command(update: Update, context):
     logger.info("Received /start command from user %s", message.from_user.id)
     args = context.args
     if not args:
-        # When user simply clicks 'Start', show a welcome message.
         message.reply_text("Welcome! Please use a valid link to retrieve files.")
         return
 
@@ -227,5 +226,5 @@ def index():
     return "Telegram File Dump Bot is running."
 
 if __name__ == "__main__":
-    # Only used when running locally.
+    # This block is only used when running locally.
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
