@@ -15,19 +15,22 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Telegram bot token
 ADMIN_IDS = os.environ.get("ADMIN_IDS", "")  # Comma-separated admin IDs (as integers)
 ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS.split(",") if x.strip()]
 
-DUMP_CHANNEL = os.environ.get("DUMP_CHANNEL")  
-# The channel (ID or public username) where files will be stored.
+DUMP_CHANNEL = os.environ.get("DUMP_CHANNEL")
+# Channel (ID or public username) where files will be stored.
 
 # For force subscriptions (private channels), we use channel IDs.
 FORCE_SUB_CHANNEL1 = os.environ.get("FORCE_SUB_CHANNEL1")  # e.g., "-1001234567890"
 FORCE_SUB_CHANNEL2 = os.environ.get("FORCE_SUB_CHANNEL2")  # e.g., "-1009876543210"
 
-# Use Heroku's built-in domain via the HEROKU_APP_NAME variable.
+# Use Heroku's built‑in domain via HEROKU_APP_NAME; fallback to BASE_URL if not set.
 HEROKU_APP_NAME = os.environ.get("HEROKU_APP_NAME")
 if HEROKU_APP_NAME:
     BASE_URL = f"https://{HEROKU_APP_NAME}.herokuapp.com"
 else:
-    BASE_URL = os.environ.get("BASE_URL")  # fallback
+    BASE_URL = os.environ.get("BASE_URL")
+    
+if not BASE_URL:
+    raise Exception("BASE_URL (or HEROKU_APP_NAME) must be set in config vars!")
 
 # ===== LOGGING SETUP =====
 logging.basicConfig(
@@ -85,17 +88,17 @@ def join_button(channel_id: str) -> str:
         return "#"
 
 # ===== HANDLERS =====
-# In-memory storage for media groups.
+# In‑memory storage for media groups.
 media_group_dict = {}  # key: media_group_id, value: list of messages
 
 def process_file_messages(update: Update, context):
     message = update.message
     user_id = message.from_user.id
+    logger.info("Received a file message from user %s", user_id)
     if user_id not in ADMIN_IDS:
         message.reply_text("You are not authorized to upload files.")
         return
 
-    # Single file
     if not message.media_group_id:
         copied = bot.copy_message(
             chat_id=DUMP_CHANNEL, from_chat_id=message.chat_id, message_id=message.message_id
@@ -104,7 +107,6 @@ def process_file_messages(update: Update, context):
         reply_text = f"Permanent link:\n{BASE_URL}/{token}"
         message.reply_text(reply_text)
     else:
-        # Media group: collect messages briefly then process together.
         mgid = message.media_group_id
         if mgid not in media_group_dict:
             media_group_dict[mgid] = []
@@ -135,8 +137,10 @@ def process_media_group(mgid):
 
 def start_command(update: Update, context):
     message = update.message
+    logger.info("Received /start command from user %s", message.from_user.id)
     args = context.args
     if not args:
+        # When user simply clicks 'Start', show a welcome message.
         message.reply_text("Welcome! Please use a valid link to retrieve files.")
         return
 
@@ -198,9 +202,14 @@ dispatcher.add_handler(CallbackQueryHandler(callback_handler))
 
 # ===== WEBHOOK ROUTES =====
 @app.route("/webhook", methods=["POST"])
-def webhook_handler():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
+def webhook_route():
+    logger.info("Webhook route invoked.")
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        logger.info("Received update: %s", update)
+        dispatcher.process_update(update)
+    except Exception as e:
+        logger.error("Error processing update: %s", e)
     return "OK"
 
 @app.route("/<token>", methods=["GET"])
@@ -218,5 +227,5 @@ def index():
     return "Telegram File Dump Bot is running."
 
 if __name__ == "__main__":
-    # This block is used when running locally.
+    # Only used when running locally.
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
