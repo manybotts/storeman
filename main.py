@@ -5,7 +5,7 @@ import base64
 import json
 import threading
 
-from flask import Flask, request, redirect, abort
+from flask import Flask, request, redirect, abort, jsonify
 from telegram import Bot, Update, InlineKeyboardMarkup, InlineKeyboardButton, ChatMember
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
 
@@ -221,10 +221,21 @@ def permanent_link(token):
         logger.error("Error in permanent link redirect: %s", e)
         abort(404)
 
+# ===== DEBUG ROUTE =====
+@app.route("/debug", methods=["GET"])
+def debug_route():
+    try:
+        info = bot.get_webhook_info().to_dict()
+        logger.info("Webhook info: %s", info)
+        return jsonify(info)
+    except Exception as e:
+        logger.error("Error retrieving webhook info: %s", e)
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/")
 def index():
     return "Telegram File Dump Bot is running."
 
 if __name__ == "__main__":
-    # This block is only used when running locally.
+    # Only used when running locally.
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")))
